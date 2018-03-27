@@ -4,7 +4,7 @@ import os
 import os.path
 import pickle
 import cv2
-from PIL import Image, ImageDraw
+from time import gmtime, strftime
 import face_recognition
 from face_recognition.cli import image_files_in_folder
 
@@ -94,13 +94,17 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
     # Get a reference to webcam #0 (the default one)
     video_capture = cv2.VideoCapture(0)
 
+    # Open the log file
+    file = open("log.txt", "a")
+
     # Initialize some variables
-    face_encodings = []
+    frame_number = 0
     process_this_frame = True
 
     while True:
         # Grab a single frame of video
         ret, frame = video_capture.read()
+        frame_number += 1
 
         # Resize frame of video to 1/4 size for faster face recognition processing
         small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
@@ -114,7 +118,13 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
             face_locations = face_recognition.face_locations(rgb_small_frame)
 
             #If no face detected then we go to the next frame
-            if len(face_encodings) == 0:
+            if len(face_locations) == 0:
+                process_this_frame = not process_this_frame
+                cv2.imshow('Video', frame)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
                 continue
 
             face_encodings = face_recognition.face_encodings(rgb_small_frame, known_face_locations=face_locations)
@@ -128,6 +138,15 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
                     zip(knn_clf.predict(face_encodings), face_locations, are_matches)]
 
         process_this_frame = not process_this_frame
+
+        # Display in the log file the name of persons which are on the frame, every 30 frames
+        if frame_number%30 == 0:
+            persons = ""
+            for name, (top, right, bottom, left) in predictions:
+                persons += " " + name
+
+            logs = strftime("%Y-%m-%d %H:%M:%S", gmtime()) + persons + "\n"
+            file.write(logs)
 
         # Display the results
         for name, (top, right, bottom, left) in predictions:
@@ -153,6 +172,7 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
             break
 
     # Release handle to the webcam
+    file.close()
     video_capture.release()
     cv2.destroyAllWindows()
 

@@ -4,7 +4,7 @@ import os
 import os.path
 import pickle
 import cv2
-from PIL import Image, ImageDraw
+from time import gmtime, strftime
 import face_recognition
 from face_recognition.cli import image_files_in_folder
 
@@ -99,6 +99,9 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     output_movie = cv2.VideoWriter('output.avi', fourcc, 30.00, (640, 360))
 
+    #Open the log file
+    file = open("log.txt", "a")
+
     frame_number = 0
 
     while True:
@@ -119,6 +122,9 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
 
         # If no faces are found in the image, we go to next frame
         if len(face_locations) == 0:
+            # Write the resulting image to the output video file
+            print("Writing frame {} / {}".format(frame_number, length))
+            output_movie.write(frame)
             continue
 
         face_encodings = face_recognition.face_encodings(rgb_frame, known_face_locations=face_locations)
@@ -132,14 +138,23 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
             zip(knn_clf.predict(face_encodings), face_locations, are_matches)]
 
 
+        # Display in the log file the name of persons which are on the frame, every 30 frames
+        if frame_number%30 == 0:
+            persons = ""
+            for name, (top, right, bottom, left) in predictions:
+                persons += " " + name
+
+            logs = strftime("%Y-%m-%d %H:%M:%S", gmtime()) + persons + "\n"
+            file.write(logs)
+
         # Display the results
         for name, (top, right, bottom, left) in predictions:
 
             # Draw a box around the face
-            cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
 
             # Draw a label with a name below the face
-            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (255, 0, 0), cv2.FILLED)
+            cv2.rectangle(frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
@@ -148,6 +163,7 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
         output_movie.write(frame)
 
     # All done!
+    file.close()
     input_movie.release()
     cv2.destroyAllWindows()
 
