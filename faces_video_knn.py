@@ -47,8 +47,8 @@ def train(train_dir, model_save_path=None, n_neighbors=None, knn_algo='ball_tree
 
             if len(face_bounding_boxes) != 1:
                 # If there are no people (or too many people) in a training image, skip the image.
-                if verbose:
-                    print("Image {} not suitable for training: {}".format(img_path, "Didn't find a face" if len(face_bounding_boxes) < 1 else "Found more than one face"))
+                #if verbose:
+                print("Image {} not suitable for training: {}".format(img_path, "Didn't find a face" if len(face_bounding_boxes) < 1 else "Found more than one face"))
             else:
                 # Add face encoding for current image to the training set
                 X.append(face_recognition.face_encodings(image, known_face_locations=face_bounding_boxes)[0])
@@ -91,51 +91,49 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
         with open(model_path, 'rb') as f:
             knn_clf = pickle.load(f)
 
-    # Get a reference to webcam #0 (the default one)
-    video_capture = cv2.VideoCapture(0)
+    # Open the input movie file
+    input_movie = cv2.VideoCapture("../hamilton_clip.mp4")
+    length = int(input_movie.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Initialize some variables
-    face_encodings = []
-    process_this_frame = True
+    # Create an output movie file (make sure resolution/frame rate matches input video!)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    output_movie = cv2.VideoWriter('output.avi', fourcc, 30.00, (640, 360))
+
+    frame_number = 0
 
     while True:
-        # Grab a single frame of video
-        ret, frame = video_capture.read()
 
-        # Resize frame of video to 1/4 size for faster face recognition processing
-        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        # Grab a single frame of video
+        ret, frame = input_movie.read()
+        frame_number += 1
+
+        # Quit when the input video file ends
+        if not ret:
+            break
 
         # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-        rgb_small_frame = small_frame[:, :, ::-1]
+        rgb_frame = frame[:, :, ::-1]
 
-        # Only process every other frame of video to save time
-        if process_this_frame:
-            # Find all the faces in the current frame of video
-            face_locations = face_recognition.face_locations(rgb_small_frame)
+        # Find all the faces in the current frame of video
+        face_locations = face_recognition.face_locations(rgb_frame)
 
-            #If no face detected then we go to the next frame
-            if len(face_encodings) == 0:
-                continue
+        # If no faces are found in the image, we go to next frame
+        if len(face_locations) == 0:
+            continue
 
-            face_encodings = face_recognition.face_encodings(rgb_small_frame, known_face_locations=face_locations)
+        face_encodings = face_recognition.face_encodings(rgb_frame, known_face_locations=face_locations)
 
-            # Use the KNN model to find the best matches for the test face
-            closest_distances = knn_clf.kneighbors(face_encodings, n_neighbors=1)
-            are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(face_locations))]
+        # Use the KNN model to find the best matches for the test face
+        closest_distances = knn_clf.kneighbors(face_encodings, n_neighbors=1)
+        are_matches = [closest_distances[0][i][0] <= distance_threshold for i in range(len(face_locations))]
 
-            # Predict classes and remove classifications that aren't within the threshold
-            predictions = [(pred, loc) if rec else ("unknown", loc) for pred, loc, rec in
-                    zip(knn_clf.predict(face_encodings), face_locations, are_matches)]
+        # Predict classes and remove classifications that aren't within the threshold
+        predictions = [(pred, loc) if rec else ("unknown", loc) for pred, loc, rec in
+            zip(knn_clf.predict(face_encodings), face_locations, are_matches)]
 
-        process_this_frame = not process_this_frame
 
         # Display the results
         for name, (top, right, bottom, left) in predictions:
-            # Scale back up face locations since the frame we detected in was scaled to 1/4 size
-            top *= 4
-            right *= 4
-            bottom *= 4
-            left *= 4
 
             # Draw a box around the face
             cv2.rectangle(frame, (left, top), (right, bottom), (255, 0, 0), 2)
@@ -145,15 +143,12 @@ def predict(knn_clf=None, model_path=None, distance_threshold=0.6):
             font = cv2.FONT_HERSHEY_DUPLEX
             cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
-        # Display the resulting image
-        cv2.imshow('Video', frame)
+        # Write the resulting image to the output video file
+        print("Writing frame {} / {}".format(frame_number, length))
+        output_movie.write(frame)
 
-        # Hit 'q' on the keyboard to quit!
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    # Release handle to the webcam
-    video_capture.release()
+    # All done!
+    input_movie.release()
     cv2.destroyAllWindows()
 
 
